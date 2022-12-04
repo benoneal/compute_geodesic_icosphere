@@ -1,0 +1,62 @@
+#pragma kernel Main
+
+#include "IcoLogic.hlsl"
+#include "Transforms.hlsl"
+
+RWStructuredBuffer<float4> vertices;
+RWStructuredBuffer<int> neighbours;
+RWStructuredBuffer<int> indices;
+
+uint resolution;
+
+void generatePoles() {
+  int n_index = 0;
+  int s_index = 1;
+  int3 north = int3(0,0,0);
+  int3 south = int3(19,0,resolution);
+
+  vertices[n_index] = vertexPosition(north, resolution);
+  vertices[s_index] = vertexPosition(south, resolution);
+  for (int i = 0; i < 5; i++) {
+    neighbours[n_index*6 + i] = idToIndex(coordToId(int3(4-i,0,1)), resolution);
+    neighbours[s_index*6 + i] = idToIndex(coordToId(int3(15+i,0,resolution-1)), resolution);
+  }
+}
+
+int neighbourIndex(int3 coord, int i) {
+  int4 n = neighbourCoord(coord, i, resolution-1);
+  int coords[3] = {idToIndex(coordToId(n.xyz), resolution), 0, 1};
+  return coords[n.w];
+}
+
+int nIndex(int i, int s, int o, int n = 0) {
+  return neighbours[i+loop(o+n, s)];
+}
+
+void generateFaces(int i, int i6, int s, int o) {
+  indices[i6-12] = i;
+  indices[i6-12+1] = nIndex(i6, s, o);
+  indices[i6-12+2] = nIndex(i6, s, o, 1);
+
+  indices[i6-12+3] = i;
+  indices[i6-12+4] = nIndex(i6, s, o, 1);
+  indices[i6-12+5] = nIndex(i6, s, o, 2);
+}
+
+[numthreads(ICO_SIDES,1,1)]
+void Main(int3 id : SV_DispatchThreadID) {
+  if (length(id) == 0) generatePoles();
+  int3 coord = idToCoord(id);
+  int index = idToIndex(id, resolution);
+  int i6 = index*6;
+
+  vertices[index] = vertexPosition(coord, resolution);
+  int e = vertices[index].w;
+
+  for (int i = 0; i < e; i++) {
+    neighbours[i6 + i] = neighbourIndex(coord, i);
+  }
+
+  int o = (coord.x >= 10) - (e == 5);
+  generateFaces(index, i6, e, o);
+}
